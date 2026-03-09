@@ -1095,6 +1095,14 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     const normalized = `${encoded || ''}`.trim();
     if (!normalized) throw new Error('Empty encoded payload');
 
+    if (normalized.startsWith('b64:')) {
+      const b64Payload = normalized.slice(4);
+      const decodedCompressed = this.decodeBase64Url(b64Payload);
+      const decompressed = decompressFromEncodedURIComponent(decodedCompressed);
+      if (decompressed) return decompressed;
+      throw new Error('Invalid B64 compressed payload');
+    }
+
     if (normalized.startsWith('lz:')) {
       const lzPayload = normalized.slice(3);
       const decompressed = decompressFromEncodedURIComponent(lzPayload);
@@ -1205,7 +1213,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
 
     const compressed = compressToEncodedURIComponent(payload);
     if (compressed && compressed.length > 0) {
-      return `lz:${compressed}`;
+      return `b64:${this.encodeBase64Url(compressed)}`;
     }
 
     return this.encodeBase64Url(payload);
