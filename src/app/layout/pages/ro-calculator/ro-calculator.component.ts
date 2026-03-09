@@ -146,6 +146,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
   preSets: (DropdownModel & { icon: string; })[] = [];
   selectedPreset = undefined;
   isInProcessingPreset = false;
+  presetNameInput = '';
 
   env = environment;
   model = createMainModel();
@@ -332,7 +333,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     this.initCalcTableColumns();
     this.initData()
       .pipe(
-        switchMap(() => this.loadItemSet(localStorage.getItem('ro-set'))),
+        switchMap(() => this.loadInitialBuild()),
         tap(() => {
           const ob = this.authService.loggedInEvent$.subscribe((isLoggedIn) => {
             this.isLoggedIn = isLoggedIn;
@@ -600,9 +601,9 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
         icon: PrimeIcons.SYNC,
         command: () => {
           if (this.isLoggedIn) {
-            this.updateCloudPreset();
+            this.updateCloudPreset(this.presetNameInput?.trim());
           } else {
-            this.updatePreset(this.selectedPreset);
+            this.updatePreset(this.presetNameInput || this.selectedPreset);
           }
         },
       },
@@ -1037,6 +1038,160 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     this.model2 = { rawOptionTxts: [] };
   }
 
+  private loadInitialBuild() {
+    const sharedModel = this.tryReadSharedBuildFromHash();
+    if (sharedModel) {
+      return this.loadItemSet(sharedModel).pipe(
+        tap(() => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Shared build loaded',
+            detail: 'Build loaded from URL hash.',
+          });
+        }),
+        catchError((error) => {
+          console.error('[hash-build] failed to load shared build', error);
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Invalid shared build',
+            detail: 'Failed to load hash build. Local state was loaded instead.',
+          });
+          return this.loadItemSet(localStorage.getItem('ro-set'));
+        }),
+      );
+    }
+
+    return this.loadItemSet(localStorage.getItem('ro-set'));
+  }
+
+  private tryReadSharedBuildFromHash(): PresetModel | null {
+    if (typeof window === 'undefined') return null;
+
+    const rawHash = window.location.hash?.replace(/^#/, '').trim();
+    if (!rawHash) return null;
+
+    const encoded = rawHash.includes('=')
+      ? new URLSearchParams(rawHash).get('build')
+      : rawHash;
+    if (!encoded) return null;
+
+    try {
+      const decoded = this.decodeBase64Url(encoded);
+      const parsed = JSON.parse(decoded);
+      const model = parsed?.m ?? parsed?.model ?? parsed;
+      if (!model || typeof model !== 'object') return null;
+
+      return model as PresetModel;
+    } catch (error) {
+      console.error('[hash-build] decode error', error);
+      return null;
+    }
+  }
+
+  private encodeBase64Url(content: string): string {
+    const bytes = new TextEncoder().encode(content);
+    let binary = '';
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte);
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  private decodeBase64Url(content: string): string {
+    const padded = content.replace(/-/g, '+').replace(/_/g, '/');
+    const padLength = (4 - (padded.length % 4)) % 4;
+    const base64 = `${padded}${'='.repeat(padLength)}`;
+
+    const binary = atob(base64);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  private buildSharableModel() {
+    const defaults = createMainModel();
+    const current = toUpsertPresetModel(this.model, this.selectedCharacter) as any;
+    const compact = {} as any;
+
+    for (const [key, value] of Object.entries(current)) {
+      const defaultValue = defaults[key];
+
+      if (Array.isArray(value)) {
+        if (value.some((v) => v != null && v !== '' && Number(v) !== 0)) {
+          compact[key] = value;
+        }
+        continue;
+      }
+
+      if (value == null || value === '' || value === false) continue;
+      if (defaultValue != null && value === defaultValue) continue;
+
+      if (typeof value === 'object') {
+        if (Object.keys(value).length === 0) continue;
+      }
+
+      compact[key] = value;
+    }
+
+    return compact as PresetModel;
+  }
+
+  private buildShareUrlHash() {
+    const payload = JSON.stringify({
+      v: 1,
+      m: this.buildSharableModel(),
+    });
+
+    return this.encodeBase64Url(payload);
+  }
+
+  private updateHashOnAddressBar(hash: string) {
+    if (typeof window === 'undefined') return;
+    const nextHash = `build=${hash}`;
+    const currentHash = window.location.hash?.replace(/^#/, '') || '';
+    if (currentHash === nextHash) return;
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${nextHash}`);
+  }
+
+  private async copyToClipboard(text: string) {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  }
+
+  async copyBuildShareLink() {
+    try {
+      const hash = this.buildShareUrlHash();
+      this.updateHashOnAddressBar(hash);
+
+      const shareUrl = `${window.location.origin}${window.location.pathname}${window.location.search}#build=${hash}`;
+      await this.copyToClipboard(shareUrl);
+
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Build link copied',
+        detail: 'Share this URL with your friend.',
+      });
+    } catch (error) {
+      console.error('[hash-build] copy failed', error);
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Failed to copy',
+        detail: 'Could not generate/copy the build URL.',
+      });
+    }
+  }
+
   private deleteLocalPresets() {
     localStorage.removeItem('presets');
   }
@@ -1076,6 +1231,19 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
         };
       });
     }
+
+    if (this.selectedPreset && !this.preSets.some((preset) => preset.value === this.selectedPreset)) {
+      this.selectedPreset = undefined;
+    }
+
+    if (this.selectedPreset) {
+      this.onPresetSelectionChange();
+    }
+  }
+
+  onPresetSelectionChange() {
+    const selected = this.preSets.find((preset) => preset.value === this.selectedPreset);
+    this.presetNameInput = selected?.label || '';
   }
 
   private waitConfirm(message: string, icon?: string) {
@@ -1130,6 +1298,8 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
           summary: 'Confirmed',
           detail: `"${name}" was added.`,
         });
+        this.selectedPreset = name;
+        this.presetNameInput = name;
       });
   }
 
@@ -1188,11 +1358,13 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     });
   }
 
-  updateCloudPreset() {
+  updateCloudPreset(newLabel?: string) {
     const id = this.selectedPreset;
     if (!id) return;
 
-    const label = this.preSets.find((a) => a.value === id)?.label;
+    const selected = this.preSets.find((a) => a.value === id);
+    const label = (newLabel || selected?.label || '').trim();
+    if (!label) return;
     const obs = this.presetService
       .updatePreset(id, {
         label,
@@ -1200,6 +1372,8 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
       })
       .pipe(
         tap((preset) => {
+          if (selected) selected.label = preset.label;
+          this.presetNameInput = preset.label;
           this.messageService.add({
             severity: 'success',
             summary: 'Updated',
@@ -1220,16 +1394,19 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
    * @returns
    */
   updatePreset(name: string) {
+    const normalizedName = `${name || ''}`.trim();
+    if (!normalizedName) return;
+
     if (this.isLoggedIn) {
-      this.createCloudPreset(name);
+      this.createCloudPreset(normalizedName);
       return;
     }
 
     const currentPresets = this.getPresetList();
-    const currentPreset = currentPresets.find((a) => a.value === name);
+    const currentPreset = currentPresets.find((a) => a.value === normalizedName);
     if (currentPreset) {
       this.confirmationService.confirm({
-        message: `Update "${name}" ?`,
+        message: `Update "${normalizedName}" ?`,
         header: 'Confirmation',
         icon: 'pi pi-exclamation-triangle',
         accept: () => {
@@ -1247,9 +1424,11 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
                 this.messageService.add({
                   severity: 'info',
                   summary: 'Confirmed',
-                  detail: `"${name}" was updated.`,
+                  detail: `"${normalizedName}" was updated.`,
                 });
                 this.isInProcessingPreset = false;
+                this.selectedPreset = normalizedName;
+                this.presetNameInput = normalizedName;
               }),
             )
             .subscribe();
@@ -1259,7 +1438,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
         },
       });
     } else {
-      this.createPreset(name);
+      this.createPreset(normalizedName);
     }
   }
 
@@ -1309,6 +1488,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
         tap((preset) => {
           this.updateCompareEvent.next(1);
           if (presetName) this.selectedPreset = presetName;
+          this.presetNameInput = preset?.label || this.presetNameInput;
           this.messageService.add({
             severity: 'success',
             summary: 'Loaded',
@@ -1339,7 +1519,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     const selected = this.getPresetList().find((a) => a.value === targePreset);
     if (selected?.['model']) {
       this.confirmationService.confirm({
-        message: `Load "${targePreset}" ?`,
+        message: `Load "${selected.label || targePreset}" ?`,
         header: 'Confirmation',
         icon: 'pi pi-exclamation-triangle',
         accept: () => {
@@ -1354,9 +1534,10 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
                 this.messageService.add({
                   severity: 'success',
                   summary: 'Successed',
-                  detail: `"${targePreset}" was loaded.`,
+                  detail: `"${selected.label || targePreset}" was loaded.`,
                 });
                 if (presetName) this.selectedPreset = presetName;
+                this.presetNameInput = selected.label || this.presetNameInput;
                 this.isInProcessingPreset = false;
               }),
             )

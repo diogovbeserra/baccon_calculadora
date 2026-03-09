@@ -31,16 +31,17 @@
         <div class="grid grid-nogutter">
           <div class="col-12">
             <div class="p-inputgroup">
-              <input #presetName [autocomplete]="false" type="text" pInputText placeholder="Name" />
+              <input [(ngModel)]="presetNameInput" [autocomplete]="false" type="text" pInputText placeholder="Name" />
               <button
                 type="button"
                 class="p-button-success"
                 pButton
                 label="Save"
                 [loading]="isInProcessingPreset"
-                [disabled]="!presetName.value || isInProcessingPreset"
-                (click)="updatePreset(presetName.value)"
+                [disabled]="!presetNameInput?.trim() || isInProcessingPreset"
+                (click)="updatePreset(presetNameInput)"
               ></button>
+              <button type="button" class="p-button-info" pButton icon="pi pi-share-alt" [disabled]="isInProcessingPreset" (click)="copyBuildShareLink()"></button>
               <button type="button" class="p-button-secondary" pButton icon="pi pi-cog" [disabled]="isInProcessingPreset" (click)="openPresetManagement()"></button>
             </div>
           </div>
@@ -54,6 +55,7 @@
                 placeholder="Presets"
                 scrollHeight="350px"
                 [(ngModel)]="selectedPreset"
+                (onChange)="onPresetSelectionChange()"
               >
                 <ng-template let-job pTemplate="selectedItem">
                   <div class="flex gap-2 py-0 align-items-center" *ngIf="model.class">
