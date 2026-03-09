@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { ConfirmationService, MenuItem, MessageService, PrimeIcons, SelectItemGroup } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, Subject, Subscription, catchError, debounceTime, filter, finalize, forkJoin, mergeMap, of, switchMap, take, tap, throwError } from 'rxjs';
@@ -1039,22 +1040,22 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
   }
 
   private loadInitialBuild() {
-    const sharedModel = this.tryReadSharedBuildFromHash();
+    const sharedModel = this.tryReadSharedBuildFromUrl();
     if (sharedModel) {
       return this.loadItemSet(sharedModel).pipe(
         tap(() => {
           this.messageService.add({
             severity: 'success',
             summary: 'Shared build loaded',
-            detail: 'Build loaded from URL hash.',
+            detail: 'Build loaded from shared URL.',
           });
         }),
         catchError((error) => {
-          console.error('[hash-build] failed to load shared build', error);
+          console.error('[build-share] failed to load shared build', error);
           this.messageService.add({
             severity: 'warn',
             summary: 'Invalid shared build',
-            detail: 'Failed to load hash build. Local state was loaded instead.',
+            detail: 'Failed to load shared build. Local state was loaded instead.',
           });
           return this.loadItemSet(localStorage.getItem('ro-set'));
         }),
@@ -1064,34 +1065,49 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     return this.loadItemSet(localStorage.getItem('ro-set'));
   }
 
-  private tryReadSharedBuildFromHash(): PresetModel | null {
+  private tryReadSharedBuildFromUrl(): PresetModel | null {
     if (typeof window === 'undefined') return null;
 
+    const searchToken = new URLSearchParams(window.location.search || '').get('build')?.trim();
     const rawHash = decodeURIComponent(window.location.hash?.replace(/^#/, '').trim() || '');
-    if (!rawHash) return null;
-
-    const encoded = rawHash.includes('=')
-      ? new URLSearchParams(rawHash).get('build')
-      : rawHash;
+    const hashToken = rawHash
+      ? rawHash.includes('build=')
+        ? new URLSearchParams(rawHash).get('build')?.trim()
+        : rawHash.trim()
+      : null;
+    const encoded = searchToken || hashToken;
     if (!encoded) return null;
 
-    const sanitized = encoded
-      .trim()
-      .replace(/\s+/g, '')
-      .replace(/[^A-Za-z0-9\-_+/=]/g, '');
-    if (!sanitized) return null;
-
     try {
-      const decoded = this.decodeBase64Url(sanitized);
+      const decoded = this.decodeSharePayload(encoded);
       const parsed = JSON.parse(decoded);
       const model = parsed?.m ?? parsed?.model ?? parsed;
       if (!model || typeof model !== 'object') return null;
 
       return model as PresetModel;
     } catch (error) {
-      console.error('[hash-build] decode error', error);
+      console.error('[build-share] decode error', error);
       return null;
     }
+  }
+
+  private decodeSharePayload(encoded: string): string {
+    const normalized = `${encoded || ''}`.trim();
+    if (!normalized) throw new Error('Empty encoded payload');
+
+    if (normalized.startsWith('lz:')) {
+      const lzPayload = normalized.slice(3);
+      const decompressed = decompressFromEncodedURIComponent(lzPayload);
+      if (decompressed) return decompressed;
+      throw new Error('Invalid LZ payload');
+    }
+
+    const decompressed = decompressFromEncodedURIComponent(normalized);
+    if (decompressed) {
+      return decompressed;
+    }
+
+    return this.decodeBase64Url(normalized);
   }
 
   private encodeBase64Url(content: string): string {
@@ -1183,19 +1199,29 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
 
   private buildShareUrlHash() {
     const payload = JSON.stringify({
-      v: 1,
+      v: 2,
       m: this.buildSharableModel(),
     });
+
+    const compressed = compressToEncodedURIComponent(payload);
+    if (compressed && compressed.length > 0) {
+      return `lz:${compressed}`;
+    }
 
     return this.encodeBase64Url(payload);
   }
 
   private updateHashOnAddressBar(hash: string) {
     if (typeof window === 'undefined') return;
-    const nextHash = `build=${hash}`;
-    const currentHash = window.location.hash?.replace(/^#/, '') || '';
-    if (currentHash === nextHash) return;
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${nextHash}`);
+    const currentUrl = new URL(window.location.href);
+    const currentBuild = currentUrl.searchParams.get('build') || '';
+    if (currentBuild === hash) return;
+    currentUrl.searchParams.set('build', hash);
+    if (currentUrl.hash.startsWith('#build=')) {
+      currentUrl.hash = '';
+    }
+    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+    window.history.replaceState(window.history.state, '', nextUrl);
   }
 
   private async copyToClipboard(text: string) {
@@ -1220,7 +1246,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
       const hash = this.buildShareUrlHash();
       this.updateHashOnAddressBar(hash);
 
-      const shareUrl = `${window.location.origin}${window.location.pathname}${window.location.search}#build=${hash}`;
+      const shareUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
       await this.copyToClipboard(shareUrl);
 
       this.messageService.add({
