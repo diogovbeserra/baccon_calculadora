@@ -9,6 +9,9 @@
         "test": "ng test",
         "lint": "ng lint --fix",
         "e2e": "ng e2e",
+        "sync:divine-pride-items": "node scripts/sync-divine-pride-items.mjs",
+        "sync:divine-pride-items:auto": "node scripts/auto-sync-divine-pride-items.mjs",
+        "merge:downloaded-items": "node scripts/merge-synced-items-into-original-item.mjs",
         "predeploy": "ng build --output-hashing all --output-path ../tong-calc-ro-host/docs --base-href ../tong-calc-ro-host/",
         "deploy": "cp ../tong-calc-ro-host/docs/index.html ../tong-calc-ro-host/docs/404.html"
     },

@@ -1,0 +1,14 @@
+{
+  "server": "LATAM",
+  "startId": 1,
+  "endId": 200000,
+  "nextId": 60486,
+  "pendingSize": 139515,
+  "inFlightSize": 0,
+  "processed": 2500,
+  "found": 0,
+  "missing": 2500,
+  "errors": 13,
+  "authErrors": 13,
+  "updatedAt": "2026-03-09T15:17:07.492Z"
+}

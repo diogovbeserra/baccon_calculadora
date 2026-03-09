@@ -144,6 +144,7 @@ export class Calculator {
   private equipItem = new Map<ItemTypeEnum, ItemModel>();
   private equipItemName = new Map<ItemTypeEnum, string>();
   private equipItemNameSet = new Set<string>();
+  private equipItemIdSet = new Set<number>();
   private mapRefine = new Map<ItemTypeEnum, number>();
   private mapGrade = new Map<ItemTypeEnum, string>();
   private mapItemNameRefine = new Map<string, number>();
@@ -303,6 +304,11 @@ export class Calculator {
   }
 
   private isEquipItem(itemName: string) {
+    const parsedId = Number(itemName);
+    if (Number.isFinite(parsedId) && this.equipItemIdSet.has(parsedId)) {
+      return true;
+    }
+
     return this.equipItemNameSet.has(itemName);
   }
 
@@ -499,6 +505,11 @@ export class Calculator {
     }
 
     this.equipItemNameSet = new Set(this.equipItemName.values());
+    this.equipItemIdSet = new Set(
+      [...this.equipItem.values()]
+        .map((item) => Number(item?.id))
+        .filter((itemId) => Number.isFinite(itemId) && itemId > 0),
+    );
     for (const [itemType, itemName] of this.equipItemName) {
       this.mapItemNameRefine.set(itemName, this.mapRefine.get(itemType));
     }

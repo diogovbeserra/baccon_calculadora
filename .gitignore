@@ -43,3 +43,11 @@ layout.css
 src/assets/demo/styles/badges.css
 ssl
 backup-preset.json
+
+# Local runtime logs
+.sync-auto*.log
+.devserver-original*.log
+
+# Local env files
+.env
+.env.*
