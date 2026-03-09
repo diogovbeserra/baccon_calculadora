@@ -148,6 +148,8 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
   selectedPreset = undefined;
   isInProcessingPreset = false;
   presetNameInput = '';
+  isImportBuildDialogVisible = false;
+  importBuildInput = '';
 
   env = environment;
   model = createMainModel();
@@ -1270,6 +1272,125 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
         detail: 'Could not generate/copy the build URL.',
       });
     }
+  }
+
+  openImportBuildDialog() {
+    this.importBuildInput = '';
+    this.isImportBuildDialogVisible = true;
+  }
+
+  closeImportBuildDialog() {
+    this.isImportBuildDialogVisible = false;
+  }
+
+  private extractBuildToken(input: string): string | null {
+    const raw = `${input || ''}`.trim();
+    if (!raw) return null;
+
+    const safeDecode = (value: string) => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+
+    const fromUrl = (value: string): string | null => {
+      try {
+        const parsed = new URL(value);
+        const fromQuery = parsed.searchParams.get('build');
+        if (fromQuery) return safeDecode(fromQuery.trim());
+
+        const hash = parsed.hash?.replace(/^#/, '').trim();
+        if (!hash) return null;
+
+        if (hash.includes('=')) {
+          const hashParam = new URLSearchParams(hash).get('build');
+          if (hashParam) return safeDecode(hashParam.trim());
+        }
+        return safeDecode(hash);
+      } catch {
+        return null;
+      }
+    };
+
+    const urlToken = fromUrl(raw);
+    if (urlToken) return urlToken;
+
+    if (raw.startsWith('?')) {
+      const fromQuery = new URLSearchParams(raw.slice(1)).get('build');
+      if (fromQuery) return safeDecode(fromQuery.trim());
+    }
+
+    if (raw.startsWith('#')) {
+      const hash = raw.slice(1).trim();
+      if (!hash) return null;
+      if (hash.includes('=')) {
+        const fromHash = new URLSearchParams(hash).get('build');
+        if (fromHash) return safeDecode(fromHash.trim());
+      }
+      return safeDecode(hash);
+    }
+
+    if (raw.startsWith('build=')) {
+      return safeDecode(raw.slice(6).trim());
+    }
+
+    return safeDecode(raw);
+  }
+
+  importBuildFromInput() {
+    const token = this.extractBuildToken(this.importBuildInput);
+    if (!token) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Invalid input',
+        detail: 'Paste a valid build URL or build code.',
+      });
+      return;
+    }
+
+    let model: PresetModel | null = null;
+    try {
+      const decoded = this.decodeSharePayload(token);
+      const parsed = JSON.parse(decoded);
+      model = (parsed?.m ?? parsed?.model ?? parsed) as PresetModel;
+    } catch (error) {
+      console.error('[build-share] import parse failed', error);
+    }
+
+    if (!model || typeof model !== 'object') {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Import failed',
+        detail: 'Code is invalid or corrupted.',
+      });
+      return;
+    }
+
+    this.loadItemSet(model)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.updateHashOnAddressBar(token);
+          this.saveCurrentStateItemset();
+          this.updateCompareEvent.next(1);
+          this.closeImportBuildDialog();
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Build imported',
+            detail: 'Shared build was applied successfully.',
+          });
+        },
+        error: (error) => {
+          console.error('[build-share] import load failed', error);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Import failed',
+            detail: 'Could not apply this build.',
+          });
+        },
+      });
   }
 
   private deleteLocalPresets() {

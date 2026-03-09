@@ -22,6 +22,39 @@
   <app-elemental-table [monsterMap]="monsterDataMap" [groupMonsterList]="groupMonsterList" [allSelectedMonsterIds]="allSelectedMonsterIds"></app-elemental-table>
 </p-dialog>
 
+<p-dialog
+  header="Import Build Code"
+  [modal]="true"
+  [(visible)]="isImportBuildDialogVisible"
+  [style]="{ width: '42rem', 'max-width': '96vw' }"
+  [draggable]="false"
+  [resizable]="false"
+>
+  <div class="p-fluid">
+    <label class="font-semibold mb-2 block">Paste URL or build code</label>
+    <textarea
+      rows="8"
+      pInputTextarea
+      [(ngModel)]="importBuildInput"
+      placeholder="https://.../?build=... OR build code"
+      style="width: 100%; resize: vertical"
+    ></textarea>
+    <small class="block mt-2">Accepted: full link, <code>?build=...</code>, <code>#build=...</code>, <code>b64:...</code>, <code>lz:...</code>.</small>
+  </div>
+  <ng-template pTemplate="footer">
+    <button type="button" pButton class="p-button-secondary" label="Cancel" (click)="closeImportBuildDialog()"></button>
+    <button
+      type="button"
+      pButton
+      class="p-button-success"
+      label="Import"
+      [loading]="isInProcessingPreset"
+      [disabled]="!importBuildInput?.trim() || isInProcessingPreset"
+      (click)="importBuildFromInput()"
+    ></button>
+  </ng-template>
+</p-dialog>
+
 <div class="grid grid-nogutter" style="min-width: 1500px">
   <!-- Left Side -->
   <div class="p-fluid col-7">
@@ -42,6 +75,7 @@
                 (click)="updatePreset(presetNameInput)"
               ></button>
               <button type="button" class="p-button-info" pButton icon="pi pi-share-alt" [disabled]="isInProcessingPreset" (click)="copyBuildShareLink()"></button>
+              <button type="button" class="p-button-help" pButton icon="pi pi-download" [disabled]="isInProcessingPreset" (click)="openImportBuildDialog()"></button>
               <button type="button" class="p-button-secondary" pButton icon="pi pi-cog" [disabled]="isInProcessingPreset" (click)="openPresetManagement()"></button>
             </div>
           </div>

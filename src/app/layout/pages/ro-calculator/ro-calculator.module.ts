@@ -7,6 +7,7 @@ import { DropdownModule } from 'primeng/dropdown';
 import { BadgeModule } from 'primeng/badge';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { InputTextModule } from 'primeng/inputtext';
+import { InputTextareaModule } from 'primeng/inputtextarea';
 import { RadioButtonModule } from 'primeng/radiobutton';
 import { RippleModule } from 'primeng/ripple';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -63,6 +64,7 @@ import { StatusInputComponent } from './status-input/status-input.component';
     InputNumberModule,
     InputSwitchModule,
     InputTextModule,
+    InputTextareaModule,
     ListboxModule,
     MultiSelectModule,
     OrderListModule,
