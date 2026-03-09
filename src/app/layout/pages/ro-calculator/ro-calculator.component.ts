@@ -1067,7 +1067,7 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
   private tryReadSharedBuildFromHash(): PresetModel | null {
     if (typeof window === 'undefined') return null;
 
-    const rawHash = window.location.hash?.replace(/^#/, '').trim();
+    const rawHash = decodeURIComponent(window.location.hash?.replace(/^#/, '').trim() || '');
     if (!rawHash) return null;
 
     const encoded = rawHash.includes('=')
@@ -1075,8 +1075,14 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
       : rawHash;
     if (!encoded) return null;
 
+    const sanitized = encoded
+      .trim()
+      .replace(/\s+/g, '')
+      .replace(/[^A-Za-z0-9\-_+/=]/g, '');
+    if (!sanitized) return null;
+
     try {
-      const decoded = this.decodeBase64Url(encoded);
+      const decoded = this.decodeBase64Url(sanitized);
       const parsed = JSON.parse(decoded);
       const model = parsed?.m ?? parsed?.model ?? parsed;
       if (!model || typeof model !== 'object') return null;
@@ -1089,12 +1095,16 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
   }
 
   private encodeBase64Url(content: string): string {
-    const bytes = new TextEncoder().encode(content);
-    let binary = '';
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte);
+    try {
+      const bytes = new TextEncoder().encode(content);
+      let binary = '';
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    } catch {
+      return btoa(unescape(encodeURIComponent(content))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
     }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
   private decodeBase64Url(content: string): string {
@@ -1103,8 +1113,41 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
     const base64 = `${padded}${'='.repeat(padLength)}`;
 
     const binary = atob(base64);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
+    try {
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return decodeURIComponent(escape(binary));
+    }
+  }
+
+  private pruneShareObject(obj: Record<string, any>): Record<string, any> {
+    const compacted = {} as Record<string, any>;
+
+    for (const [key, value] of Object.entries(obj || {})) {
+      if (value == null || value === '' || value === false) continue;
+
+      if (Array.isArray(value)) {
+        if (value.some((v) => v != null && v !== '' && Number(v) !== 0)) {
+          compacted[key] = value;
+        }
+        continue;
+      }
+
+      if (typeof value === 'object') {
+        const nested = this.pruneShareObject(value);
+        if (Object.keys(nested).length > 0) {
+          compacted[key] = nested;
+        }
+        continue;
+      }
+
+      if (typeof value === 'number' && value === 0) continue;
+
+      compacted[key] = value;
+    }
+
+    return compacted;
   }
 
   private buildSharableModel() {
@@ -1126,7 +1169,10 @@ export class RoCalculatorComponent implements OnInit, OnDestroy {
       if (defaultValue != null && value === defaultValue) continue;
 
       if (typeof value === 'object') {
-        if (Object.keys(value).length === 0) continue;
+        const nested = this.pruneShareObject(value);
+        if (Object.keys(nested).length === 0) continue;
+        compact[key] = nested;
+        continue;
       }
 
       compact[key] = value;
